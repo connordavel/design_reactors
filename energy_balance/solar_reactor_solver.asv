@@ -1,0 +1,86 @@
+% Part B sollution
+clear 
+clc
+clear figure
+%% Initial Calculations on flow rate and volume
+tau = 1.0; % sec
+R = 8.314462618; % L*kP/K/mol, J/K/mol
+P_T = 3500; % kPa 35bar -> constant throughout 
+%% X Domain: Length of a single tube
+L_F = 10; % length of tubes, in meters
+L_domain = [0 L_F]; 
+n = 100; % number of tubes
+D =  0.20; % diameter of a single tube
+T0 = 298.15; % initial temperature (K)
+%% Initial conditions
+F_C = 2039.166; %kmol/hr 
+F_H2O = 2529.721; %kmol/hr 
+F_CO = 211.9349; %kmol/hr 
+F_CO2 = 0.095593; %kmol/hr 
+F_H2 = 34950.35; %kmol/hr 
+F_CH4 = 1838.185; %kmol/hr 
+F_ash = 79.83018; %kmol/hr 
+F_S = 0.170378; %kmol/hr 
+F_H2S = 0; %kmol/hr 
+F_Cl2 = 4.622897; %kmol/hr 
+F_HCl = 0; %kmol/hr 
+F_CH4OH = 396.9281; %kmol/hr
+F_N2 = 227.9021; %kmol/hr
+P_T = P_T;             %kPa
+T_r = T0;              %K
+tube_diameter = D;     % m
+
+IC =   [F_C ...
+        F_H2O ...
+        F_CO ...
+        F_CO2 ...
+        F_H2 ...
+        F_CH4 ...
+        F_ash ...
+        F_S ...
+        F_H2S ...
+        F_Cl2 ...
+        F_HCl ...
+        F_CH4OH ...
+        F_N2 ...
+        P_T ...
+        T_r ...
+        tube_diameter];
+%% Solve ODE
+opts = odeset ('AbsTol', 0.0001, 'RelTol', 0.0001); 
+[L, Ysol] = ode45('ode', L_domain, IC, opts);
+%% Data handling 
+F_C = Ysol(:,1); 
+F_H2O = Ysol(:,2); 
+F_CO = Ysol(:,3);  
+F_CO2 = Ysol(:,4); 
+F_H2 = Ysol(:,5); 
+F_CH4 = Ysol(:,6); 
+F_ash = Ysol(:,7); 
+F_S = Ysol(:,8); 
+F_H2S = Ysol(:,9); 
+F_Cl2 = Ysol(:,10); 
+F_HCl = Ysol(:,11); 
+F_CH4OH = Ysol(:,12); 
+F_N2 = Ysol(:,13); 
+P_T = Ysol(:,14); 
+T_r = Ysol(:,15); 
+tube_diameter = Ysol(:,16); 
+%% Plotting 
+fig1 = figure(1);
+hold on
+grid on
+set(fig1, 'Name', 'Rector Flows along each Tube');
+width = 1;
+plot(L.*n, F_C2H4,'LineWidth',width );
+plot(L.*n, F_HCl,'LineWidth',width );
+plot(L.*n, F_O2,'LineWidth',width );
+plot(L.*n, F_C2H4Cl2,'LineWidth',width );
+plot(L.*n, F_H2O,'LineWidth',width );
+plot(L.*n, F_C2H3Cl3,'LineWidth',width );
+plot(L.*n, F_CO2,'LineWidth',width );
+plot(L.*n, F_Cl2,'LineWidth',width );
+hold off
+legend('C2H4', 'HCl', 'O2', 'C2H4Cl2', 'H2O', 'C2H3Cl3', 'CO2', 'Cl2');
+xlabel('Reactor volume (L)');
+ylabel('Flow Rate (mol/hr)');

@@ -1,0 +1,167 @@
+function [dY] = ode(L, Y)
+    %% unpack variable
+    F_C = Y(1); %kmol/hr
+    F_H2O = Y(2); %kmol/hr 
+    F_CO = Y(3); %kmol/hr 
+    F_CO2 = Y(4); %kmol/hr 
+    F_H2 = Y(5); %kmol/hr 
+    F_CH4 = Y(6); %kmol/hr 
+    F_ash = Y(7); %kmol/hr 
+    F_S = Y(8); %kmol/hr 
+    F_H2S = Y(9); %kmol/hr 
+    F_Cl2 = Y(10); %kmol/hr 
+    F_HCl = Y(11); %kmol/hr 
+    F_CH4OH = Y(12); %kmol/hr
+    F_N2 = Y(13); %kmol/hr
+    P_T = Y(14);             %kPa
+    T_g = Y(15);              %K
+    D = Y(16);     % m
+    F_C_i = Y(17); %kmol/hr
+    F_CH4_i = Y(18); %kmol/hr
+    T_c = Y(19); %K
+    T_w = Y(20); %K
+    L = Y(21); % m
+    
+    %% calculate averaged properties
+    gases = {'CH4', 'H2O_v', 'CO', 'H2', 'CO2', 'Cl2', 'HCl'}; 
+    flows = [F_CH4 F_H2O F_CO F_H2 F_CO2 F_Cl2 F_HCl];
+    F_T_g = F_CH4 + F_H2O + F_CO + F_H2 + F_CO2 + F_Cl2 + F_HCl; 
+    MW_g_num = 0;
+    MW_g_den = 0; 
+    for i = 1:length(gases)
+        gas = string(gases(i));
+        flow = flows(i); 
+        MW_g_num = MW_g_num + flow*MW().get(gas);
+        MW_g_den = MW_g_den + flow;
+    end
+    MW_g = MW_g_num/MW_g_den / 1000; %kg/mol 
+    
+    Cp_g_num = 0;
+    Cp_g_den = 0; 
+    for i = 1:length(gases)
+        gas = string(gases(i));
+        flow = flows(i); 
+        Cp_g_num = Cp_g_num + flow*Cp().get(gas, T_g);
+        Cp_g_den = Cp_g_den + flow; 
+    end
+    Cp_g = Cp_g_num/Cp_g_den; % J/molK
+    
+    k_g_num = 0;
+    k_g_den = 0; 
+    for i = 1:length(gases)
+        gas = string(gases(i));
+        flow = flows(i); 
+        k_g_num = k_g_num + flow*k().get(gas, T_g) * MW().get(gas)^(1/3);
+        k_g_den = k_g_den + flow*MW().get(gas)^(1/3);
+    end
+    k_g = k_g_num/k_g_den; % W/mK
+    
+    mu_g_num = 0;
+    mu_g_den = 0; 
+    for i = 1:length(gases)
+        gas = string(gases(i));
+        flow = flows(i); 
+        mu_g_num = mu_g_num + flow*mu().get(gas, T_g) * MW().get(gas)^(1/3);
+        mu_g_den = mu_g_den + flow*MW().get(gas)^(1/3); 
+    end
+    mu_g = mu_g_num/mu_g_den * 1E-7; % Pa * s 
+    %% Solve for partial pressures
+    F_T = F_H2O + F_CO + F_CO2 + F_H2 + F_CH4 + F_Cl2 + F_CH4OH + F_N2; % total mols of GAS (does not include solids)
+    P_H2O = F_H2O / F_T * P_T; %kPa
+    P_CO = F_CO / F_T * P_T; %kPa
+    P_CO2 = F_CO2 / F_T * P_T; %kPa
+    P_H2 = F_H2 / F_T * P_T; %kPa 
+    P_CH4 = F_CH4 / F_T * P_T; %kPa
+    P_Cl2 = F_Cl2 / F_T * P_T; %kPa
+    P_CH4OH = F_CH4OH / F_T * P_T; %kPa
+    P_N2 = F_N2 / F_T * P_T; %kPa
+    
+    %% Ideal gas law to calculate flow velocity: u
+    Q = (F_T*1000) * (8.314) * T_g / P_T; % L/hr
+    Q = Q / 3600; % L/s 
+    A_cs = pi()/4 * D^2; % m^2
+    u = (Q/1000) / A_cs; % m/s
+    
+    %% Woodruff Paper: reaction for biomass carbon char
+    conversion = (F_C_i-F_C)/F_C_i; % hardcoded for now
+    K1 = 2510 * exp(-(112600)/8.314/T_g); %1/bar/s
+    K2 = 0.0674 * exp(-(-37300)/8.314/T_g); %1/har
+    K3 = 0.304 * exp(-(-36600)/8.314/T_g); %1/bar
+    k0 = (K1*P_H2O/100)/(1+K2*P_H2O/100+K3*P_H2/100);
+    rate_char = k0*(1-conversion)*sqrt(1-4.3*log(1-conversion)); % 1/sec
+    dF_C = -F_C_i/u*rate_char; %kmol/hr/m
+    dF_H2O = dF_C; 
+    dF_CO = -dF_C;
+    dF_H2 = -dF_C; 
+   
+    %% Dufour Paper: reaction for methane conversion to syngas
+    rate_CH4 = 4.7*10^7*exp(-211000/8.314/T_g) * P_CH4^(1.48) * P_H2^(-0.91) * P_H2O^(-0.11); % mol/m3/s
+    dF_CH4 = -Q * rate_CH4 / (1000) / u; % mol/s/m
+    dF_CH4 = dF_CH4 * 3600 / 1000; % kmol/hr/m
+    dF_H2O = dF_H2O + dF_CH4; 
+    dF_CO = dF_CO - dF_CH4;
+    dF_H2 = dF_H2 - dF_CH4;   
+    %% gas phase energy balance
+    deltaH_rxn1 = 2.3088e+05; %J/mol methane
+    deltaH_rxn2 = 1.5793e+05; %J/mol of Carbon
+    rxn_energy1 = -deltaH_rxn1*(dF_CH4*1000/3600); % J/m/sec, W/m
+    rxn_energy2 = (F_C_i*1000/3600)*deltaH_rxn2*(rate_char/u); % J/m/sec, W/m
+    d_i = D; % simplification for now
+    
+    h_w = 0.034*(k_g/d_i)*(F_T_g*MW_g*d_i/A_cs/mu_g)^0.8*(T_g/((T_g+T_w)/2))^0.8*(Cp_g*mu_g/k_g/MW_g)^0.4*(L/d_i)^0.1; % W/ m2 K
+    energy_wall = h_w*pi()*d_i*(T_w-T_g); %W/m
+    
+    R0 = 0.00005; % m
+    h_p = k_g/R0; % W/m2 K
+    a_c = 3.1E-8; % m2
+    MW_c = 0.012; % kg/mol
+    V_c = 5.2E-13;  %m3
+    rho_c = 2270; % kg/m3
+    A = a_c*(F_C*1000/3600)*MW_c / u / V_c / rho_c; 
+    energy_particles = h_p * A * (T_c - T_g); % W/m
+    dT_g = (-rxn_energy1 - rxn_energy2 + energy_wall + energy_particles)/(Cp_g*(F_T_g*1000/3600));
+    
+    %% particle phase energy balance 
+    deltaH_rxn2 = 1.5793e+05; %J/mol of Carbon
+    rxn_energy2 = (F_C_i*1000/3600)*deltaH_rxn2*(rate_char/u); % J/m/sec, W/m
+    
+    n_c = F_C*MW_c/u/A_cs/V_c/rho_c;
+    energy_conv = -h_p*a_c*A_cs*n_c*(T_c-T_g); % W/m
+    
+    energy_rad = 
+    
+    % all "dF" variables are short for "dF/dz" 
+    dF_CO2 = 0; 
+    dF_ash = 0; 
+    dF_S = 0;
+    dF_H2S = 0;
+    dF_Cl2 = 0;
+    dF_HCl = 0;
+    dF_CH4OH = 0;
+    dF_N2 = 0;
+    dP_T = 0;
+    dT_c = 0;
+    dT_w = 0; 
+    
+    dY = [dF_C;...
+        dF_H2O; ...
+        dF_CO; ...
+        dF_CO2; ...
+        dF_H2;...
+        dF_CH4;...
+        dF_ash;...
+        dF_S;...
+        dF_H2S; ...
+        dF_Cl2;...
+        dF_HCl;...
+        dF_CH4OH;...
+        dF_N2;...
+        dP_T;...
+        dT_g;...
+        0;...
+        0;...
+        0;...
+        dT_c;...
+        dT_w; ...
+        0];
+end
